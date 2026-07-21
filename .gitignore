@@ -9,6 +9,8 @@ xcuserdata/
 Package.resolved
 *.app
 *.dmg
+!downloads/
+!downloads/*.dmg
 *.zip
 *.tar.gz
 *.xcarchive

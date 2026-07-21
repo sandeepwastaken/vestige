@@ -11,7 +11,9 @@
 
   <br>
 
-  <a href="#install">Install from source</a>
+  <a href="downloads/Vestige-1.0.0-unnotarized.dmg?raw=1">Download DMG</a>
+  ·
+  <a href="#install">Install</a>
   ·
   <a href="#first-run">First run</a>
   ·
@@ -92,8 +94,21 @@ you choose.
 ## Install
 
 Vestige requires **macOS 14 Sonoma or later** and a Mac with hardware video
-encoding. Apple silicon is recommended. Vestige is distributed as source code:
-clone the repository and build the app locally.
+encoding. Apple silicon is recommended.
+
+### Option 1: Download the DMG
+
+Download [Vestige-1.0.0-unnotarized.dmg](downloads/Vestige-1.0.0-unnotarized.dmg?raw=1),
+open it, and drag **Vestige** into **Applications**.
+
+This DMG is not notarized by Apple, so macOS will warn that it cannot verify the
+developer. To open it anyway, right-click **Vestige** and choose **Open**, or try
+opening it once and then use **System Settings -> Privacy & Security -> Open
+Anyway**. If you prefer not to bypass that warning, build from source instead.
+
+### Option 2: Build from source
+
+Use the **Code** button on this repository to copy its clone URL, then run:
 
 ```bash
 git clone https://github.com/sandeepwastaken/vestige
@@ -102,7 +117,7 @@ cd vestige
 ```
 
 The build script creates `dist/Vestige.app`, installs it to `/Applications`, and
-launches it. No prebuilt app or installer is downloaded.
+launches it.
 
 ## First Run
 
