@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Vestige is intentionally NOT sandboxed.
+
+	  ScreenCaptureKit system-audio capture and writing clips to a user-chosen
+	  folder outside the container both require a non-sandboxed process. The app
+	  makes no network connections of any kind, so the privacy trade-off is
+	  limited to local file access.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- Needed for the optional "Capture microphone" setting, which is off by
+	     default. macOS still requires the user to grant microphone access
+	     separately the first time it is switched on. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
