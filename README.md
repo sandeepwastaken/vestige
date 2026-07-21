@@ -96,7 +96,7 @@ encoding. Apple silicon is recommended. Vestige is distributed as source code:
 clone the repository and build the app locally.
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/sandeepwastaken/vestige
 cd vestige
 ./Scripts/build-app.sh --run
 ```
