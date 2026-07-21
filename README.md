@@ -11,7 +11,7 @@
 
   <br>
 
-  <a href="downloads/Vestige-1.0.0-unnotarized.dmg?raw=1">Download DMG</a>
+  <a href="downloads/Vestige-1.0.1-unnotarized.dmg?raw=1">Download DMG</a>
   ·
   <a href="#install">Install</a>
   ·
@@ -98,7 +98,7 @@ encoding. Apple silicon is recommended.
 
 ### Option 1: Download the DMG
 
-Download [Vestige-1.0.0-unnotarized.dmg](downloads/Vestige-1.0.0-unnotarized.dmg?raw=1),
+Download [Vestige-1.0.1-unnotarized.dmg](downloads/Vestige-1.0.1-unnotarized.dmg?raw=1),
 open it, and drag **Vestige** into **Applications**.
 
 This DMG is not notarized by Apple, so macOS will warn that it cannot verify the

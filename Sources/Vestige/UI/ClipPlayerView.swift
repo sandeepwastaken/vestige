@@ -1,4 +1,5 @@
-@preconcurrency import AVKit
+import AVFoundation
+import CoreMedia
 import SwiftUI
 
 /// Resolves a URL to a clip before showing the player.
@@ -25,6 +26,58 @@ struct ClipPlayerLoader: View {
     }
 }
 
+/// The video surface.
+///
+/// A plain `AVPlayerLayer` rather than AVKit's SwiftUI `VideoPlayer`. That view
+/// is backed by an internal class whose superclass is the Objective-C
+/// `AVPlayerView`, and a SwiftPM-built binary never links the AVKit framework
+/// that vends it — so the Swift runtime cannot resolve the superclass metadata
+/// and calls `abort()` the moment the view is materialised. In a menu bar app
+/// that reads as "clicking a clip quits Vestige". `AVPlayerLayer` lives in
+/// AVFoundation, which is already linked for capture and encoding, so this
+/// draws frames with no AVKit involvement at all.
+private final class PlayerLayerView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer = CALayer()
+        playerLayer.videoGravity = .resizeAspect
+        layer?.addSublayer(playerLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    /// Implicit animation would make the video lag a window resize by a frame.
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+}
+
+private struct PlayerSurface: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> PlayerLayerView {
+        let view = PlayerLayerView()
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateNSView(_ view: PlayerLayerView, context: Context) {
+        if view.playerLayer.player !== player {
+            view.playerLayer.player = player
+        }
+    }
+}
+
 /// Plays a clip and lets the user mark moments inside it.
 ///
 /// Bookmarks are the reason this exists rather than just handing the file to
@@ -35,15 +88,18 @@ struct ClipPlayerView: View {
     let clip: Clip
 
     @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
 
     @State private var player = AVPlayer()
     @State private var currentTime: Double = 0
     @State private var duration: Double = 0
+    @State private var isPlaying = false
+    @State private var isMuted = false
+    @State private var loadFailed = false
     @State private var newBookmarkLabel = ""
     @State private var editingBookmark: Bookmark.ID?
     @State private var timeObserver: Any?
-    @FocusState private var isLabelFocused: Bool
+    @State private var endObservers = NotificationObservers()
+    @FocusState private var isPlayerFocused: Bool
 
     private var bookmarks: [Bookmark] {
         model.metadata.bookmarks(for: clip.url)
@@ -66,6 +122,7 @@ struct ClipPlayerView: View {
             if let timeObserver {
                 player.removeTimeObserver(timeObserver)
             }
+            timeObserver = nil
             player.pause()
         }
     }
@@ -74,17 +131,106 @@ struct ClipPlayerView: View {
 
     private var playerPane: some View {
         VStack(spacing: 0) {
-            VideoPlayer(player: player)
+            videoSurface
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // A second scrubber below the player, marked with the bookmarks.
-            // AVKit's own bar cannot show them, and being able to see where the
-            // good moments are is the entire point.
-            bookmarkTimeline
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.bar)
+            // A scrubber below the video, marked with the bookmarks. Being able
+            // to see where the good moments are is the entire point.
+            VStack(spacing: 10) {
+                bookmarkTimeline
+                transportControls
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.bar)
         }
+        .focusable()
+        .focused($isPlayerFocused)
+        .focusEffectDisabled()
+        .onKeyPress(.space) {
+            togglePlayback()
+            return .handled
+        }
+        .onKeyPress(.leftArrow) {
+            seek(to: currentTime - 5)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            seek(to: currentTime + 5)
+            return .handled
+        }
+    }
+
+    @ViewBuilder
+    private var videoSurface: some View {
+        if loadFailed {
+            ContentUnavailableView(
+                "Can't Play This Clip",
+                systemImage: "exclamationmark.triangle",
+                description: Text("The file may be damaged or still being written.")
+            )
+        } else {
+            PlayerSurface(player: player)
+                .background(.black)
+                .overlay {
+                    // The paused state needs to be readable at a glance, since
+                    // there is no chrome on the video itself.
+                    if !isPlaying {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .padding(24)
+                            .background(.black.opacity(0.35), in: .circle)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: isPlaying)
+                .contentShape(.rect)
+                .onTapGesture {
+                    isPlayerFocused = true
+                    togglePlayback()
+                }
+        }
+    }
+
+    private var transportControls: some View {
+        HStack(spacing: 14) {
+            Button {
+                seek(to: currentTime - 10)
+            } label: {
+                Image(systemName: "gobackward.10")
+            }
+            .help("Back 10 seconds")
+
+            Button {
+                togglePlayback()
+            } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title3)
+                    .frame(width: 24)
+            }
+            .help(isPlaying ? "Pause" : "Play")
+
+            Button {
+                seek(to: currentTime + 10)
+            } label: {
+                Image(systemName: "goforward.10")
+            }
+            .help("Forward 10 seconds")
+
+            Spacer()
+
+            Button {
+                isMuted.toggle()
+                player.isMuted = isMuted
+            } label: {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            }
+            .help(isMuted ? "Unmute" : "Mute")
+        }
+        .buttonStyle(.borderless)
+        .labelStyle(.iconOnly)
+        .disabled(loadFailed)
     }
 
     private var bookmarkTimeline: some View {
@@ -232,7 +378,6 @@ struct ClipPlayerView: View {
         HStack(spacing: 6) {
             TextField("Mark this moment…", text: $newBookmarkLabel)
                 .textFieldStyle(.roundedBorder)
-                .focused($isLabelFocused)
                 .onSubmit(addBookmark)
 
             Button {
@@ -259,7 +404,17 @@ struct ClipPlayerView: View {
 
     private func load() async {
         let asset = AVURLAsset(url: clip.url)
-        player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
+
+        // A clip still being muxed, or one truncated by a crash, would otherwise
+        // show a black rectangle that never starts.
+        guard let isPlayable = try? await asset.load(.isPlayable), isPlayable else {
+            loadFailed = true
+            return
+        }
+
+        let item = AVPlayerItem(asset: asset)
+        player.replaceCurrentItem(with: item)
+        player.isMuted = isMuted
 
         if let loaded = try? await asset.load(.duration) {
             duration = CMTimeGetSeconds(loaded)
@@ -275,11 +430,41 @@ struct ClipPlayerView: View {
                 currentTime = CMTimeGetSeconds(time)
             }
         }
+
+        // Reaching the end leaves the player paused on the last frame; without
+        // this the button would still read "pause".
+        endObservers.observe(AVPlayerItem.didPlayToEndTimeNotification, object: item) {
+            isPlaying = false
+        }
+
+        // The window was opened by someone who clicked a clip to watch it.
+        play()
+        isPlayerFocused = true
+    }
+
+    private func togglePlayback() {
+        guard !loadFailed else { return }
+        if isPlaying {
+            player.pause()
+            isPlaying = false
+        } else {
+            play()
+        }
+    }
+
+    private func play() {
+        // Playing from the last frame would otherwise do nothing at all.
+        if duration > 0, currentTime >= duration - 0.05 {
+            seek(to: 0)
+        }
+        player.play()
+        isPlaying = true
     }
 
     private func seek(to seconds: Double) {
-        let time = CMTime(seconds: max(0, min(seconds, duration)), preferredTimescale: 600)
+        let clamped = max(0, min(seconds, duration))
+        let time = CMTime(seconds: clamped, preferredTimescale: 600)
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
-        currentTime = seconds
+        currentTime = clamped
     }
 }
